@@ -1,0 +1,108 @@
+field left: Ref
+field right: Ref
+field parent: Ref
+field data: Int
+field mark: Bool
+field r: Ref
+
+
+predicate tree(t : Ref) {
+    acc(t.parent, 1/2) && node(t) && t.parent == null
+}
+
+
+predicate node(n: Ref) {
+    acc(n.left) && acc(n.right) && acc(n.parent, 1/2) && acc(n.data) && acc(n.mark) && 
+    (n.left != null ==>  node(n.left) && acc(n.left.parent, 1/2)) && 
+    (n.right != null ==> node(n.right) && acc(n.right.parent, 1/2))
+}
+
+// Imagine this abstract function returns all the nodes of the tree. Since we were not able to define properly a predicate
+// we cannot define a good postcondition, imagine is something like: forall n in result :: n is a node of the tree
+function content_tree(t : Ref) : Seq[Ref]
+  requires tree(t)
+
+
+// This algorithm marks the nodes in the tree in a pre-order fashion. It does it in an efficent way: 
+// it uses parent pointers to traverse the tree, bit it also perform anti-clock wise rotations to speed up the process. 
+// the main challenge of this algorithm is to define a predicate that represents this kind of rotation, and prove that after the while loop
+// the tree is still a valid tree. 
+method markTree(root: Ref)
+    requires tree(root)
+    requires root != null
+
+
+    // The difficulty of proving this is stricly related to the difficulty of defining an adequate predicate for the rotation. If we were able to
+    // define such predicate, we could specify that after every iteration of the while loop, the tree is still in a "rotation phase", and as soon
+    // as the root parent gets set back to null, the tree is a valid tree again. We would have done that using an invariant (or more) in the while loop. 
+    
+    // This should ensure both memory safety and that the tree is still a binary tree with parents in the end
+    ensures tree(root)
+
+
+    // This proprerty ensures that the resulting tree still has the same nodes. This would be doable if we were able to define an
+    // adequate predicate, and hence define a proper abstraction for the content.
+    ensures old(content_tree(root)) == content_tree(root)
+
+    // To demonstrate that this algorithm does not alter the shape of the tree, we would probably have to define some kind of predicate 
+    // that represents the shape of the tree. Still, doing so would keep this challenge hard because of the while loop: we would have 
+    // to specify some kind of invariant that ensures that when the root parents are again null, the tree has the same shape as before.
+
+    // this would result in a postcondition such as: ensures old(shape(root)) == shape(root)
+
+    // Checking if the nodes of the tree are all marked should be immediate after defining a proper abstraction for the tree content
+    // (which in this case is the diffiult part). The following postcondition should express this property:
+    ensures forall n : Ref :: n in content_tree(root) ==> acc(n.mark) && n.mark == true
+
+    // The assignment states that we also have to check if this algorithm visits the tree in an in-order fashion.
+    // We found out that this algorithm actually performs a pre-order traversal, and not in-order, so we assume that we need to check this property.
+
+    // To check this, first we need to have some kind of function that actually visits the tree in a pre-order fashion. Imagine we have
+    // such a function and it returns a sequence of nodes in pre-order. Then, we could create a ghost variable (a sequence), and every time
+    // the algorithm marks a node (i.e. x.mark := true), we append x into this sequence (if x is not already present, since it appears that this
+    // algorithm also marks the same node more than once). After that, we could just check if the sequence is the same as the one returned 
+    // by the pre-order traversal function.  
+
+
+{
+  var x: Ref
+  var y: Ref
+
+  x := root
+
+  // would like to do unfold tree(root)
+  // ---------------- unfold node(x)
+
+
+  // this is a do-while loop; we have extracted the first iteration
+  x.mark := true
+  if (x.left == null && x.right == null) {
+    y := x.parent
+
+  }else{
+    y := x.left
+    
+    x.left := x.right
+    x.right := x.parent
+    x.parent := y
+    x := y    
+  }
+  x := y
+ 
+  // ---------------- fold node(x)
+
+  while (x != null)
+  // invariants we talked about in the comments above
+  {
+    x.mark := true
+    if (x.left == null && x.right == null) {
+      y := x.parent
+    }else{
+      y := x.left
+      x.left := x.right
+      x.right := x.parent
+      x.parent := y
+    }
+    x := y
+  }
+}

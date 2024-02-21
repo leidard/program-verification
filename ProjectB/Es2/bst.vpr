@@ -1,0 +1,171 @@
+field elem : Int
+field left : Ref
+field right : Ref
+
+
+predicate time_credit()
+method consume_time_credit()
+    requires time_credit()
+
+
+//    ----------------------------- UTILITIES ---------------------------------
+
+function max(a : Int, b : Int) : Int 
+    ensures result >= a && result >= b
+    ensures result == a || result == b
+{
+    a > b ? a : b
+}
+
+function min(a : Int, b : Int) : Int 
+    ensures result <= a && result <= b
+    ensures result == a || result == b
+{
+    a < b ? a : b
+}
+
+// PART 1: Binary search tree predicate
+//
+// Define a predicate for a binary search tree. You may define new fields and
+// additional predicates. You may add arguments or heap-based functions for
+// abstraction.
+
+// with these functions there is no need to specify the postcondition of tree_content in the bst predicate
+
+//function max_bst(tree : Ref) : Int
+//    requires bst(tree)
+//    ensures forall x : Int :: x in seq_to_set(tree_content(tree)) && x != result ==> x < result
+//    ensures result in seq_to_set(tree_content(tree))
+//
+//function min_bst(tree : Ref) : Int
+//    requires bst(tree)
+//    ensures forall x : Int :: x in seq_to_set(tree_content(tree)) && x != result ==> x > result
+//    ensures result in seq_to_set(tree_content(tree))
+
+function max_seq(s : Seq[Int]) : Int
+    requires |s| > 0
+    ensures Seq(s[0]) ++ s[1..] == s
+    ensures forall x : Int :: x in s ==> x <= result
+    ensures result in s
+    {
+        |s| == 1 ? s[0] : max(s[0], max_seq(s[1..]))
+    }
+
+function min_seq(s : Seq[Int]) : Int
+    requires |s| > 0
+    ensures Seq(s[0]) ++ s[1..] == s
+    ensures forall x : Int :: x in s ==> x >= result
+    ensures result in s
+    {
+        |s| == 1 ? s[0] : min(s[0], min_seq(s[1..]))
+    }
+
+function seq_to_set(seq : Seq[Int]) : Set[Int]
+    ensures forall x : Int :: x in seq ==> x in result
+    ensures forall x : Int :: x in result ==> x in seq      // they contain the same elements
+
+    {
+        seq == Seq() ? Set() : Set(seq[0]) union seq_to_set(seq[1..])
+    }
+
+
+function tree_content(tree: Ref) : Seq[Int] 
+    requires bst(tree)
+    ensures |result| > 0
+    {
+        unfolding bst(tree) in
+        (tree.left == null && tree.right == null) ? Seq(tree.elem) : 
+        (tree.left == null && tree.right != null) ? Seq(tree.elem) ++ tree_content(tree.right) :
+        (tree.left != null && tree.right == null) ? tree_content(tree.left) ++ Seq(tree.elem) :
+         tree_content(tree.left) ++ Seq(tree.elem) ++ tree_content(tree.right)
+    
+    }
+
+// need to specify that 
+predicate bst(node: Ref) {
+    acc(node.elem) && acc(node.left) && acc(node.right) &&
+    (node.left != null ==> bst(node.left) &&
+     |tree_content(node.left)| > 0 &&                       // viper does not understand the postcondition of tree_content for some reason
+      node.elem > max_seq(tree_content(node.left))) && 
+
+    (node.right != null ==> bst(node.right) &&
+     |tree_content(node.right)| > 0 &&                      // viper does not understand the postcondition of tree_content for some reason
+      node.elem < min_seq(tree_content(node.right)))
+
+}
+
+function height(tree: Ref) : Int
+    requires bst(tree)
+    ensures result >= 0
+    {
+        unfolding bst(tree) in 
+
+        (tree.left == null) ? 
+            ((tree.right == null) ? 0 : 1 + height(tree.right)) :                                                // case  were left is null
+            ((tree.right == null) ? 1 + height(tree.left) : 1 + max(height(tree.left), height(tree.right)))      // case were left is not null
+        
+    }
+
+// PART 2: BST insertion method
+//
+// Use the bst predicate you defined to implement a method which inserts a
+// value into the given tree.
+method bst_insert(tree: Ref, val: Int)
+    requires bst(tree)
+    requires acc(time_credit(), (height(tree) + 1)/1)
+    ensures bst(tree)
+    ensures old(seq_to_set(tree_content(tree))) union Set(val) == seq_to_set(tree_content(tree))
+
+    {
+        
+        consume_time_credit()
+
+        unfold bst(tree)
+        
+        if(val < tree.elem) {
+            if(tree.left == null)
+                {
+                    var new_tree_left : Ref := new(*)
+                    new_tree_left.elem := val
+                    new_tree_left.left := null
+                    new_tree_left.right := null
+                    
+
+                    tree.left := new_tree_left
+                    fold bst(tree.left)
+
+                }
+            else {
+                // since is not null i know that tree.left is a bst
+                bst_insert(tree.left, val)
+                
+            }
+        }
+
+        else {
+            if(val > tree.elem) {
+                if(tree.right == null)
+                    {
+                        var new_tree_right : Ref := new(*)
+                        new_tree_right.elem := val
+                        new_tree_right.left := null
+                        new_tree_right.right := null
+
+
+                        tree.right := new_tree_right
+                        fold bst(tree.right)
+
+                    }
+                else {
+                    bst_insert(tree.right, val)
+                }
+            }   
+        }
+        
+        fold bst(tree)
+    }
+
+// PART 3: Logarithmic runtime upper bound
+//
+// Prove that `bst_insert` terminates within `h + 1` time units, where `h` is
+// the height of the tree.

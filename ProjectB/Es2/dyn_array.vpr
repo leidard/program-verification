@@ -1,0 +1,189 @@
+field curr_size: Int
+field capacity: Int
+//field data: Ref
+field data: Int
+
+// IMPORTANT: Sometimes this takes very long to verify (it times out sometimes). Should be a bit faster with carbon 
+// but at some point it also verifies with silicon.
+
+predicate time_credit()
+method consume_time_credit()
+    requires time_credit()
+
+
+domain dummy {
+
+    function array_offset(base: Ref, idx: Int): Ref
+
+    // We state as an axiom that the pointers of an array are all different from each other
+    axiom {forall i: Int, j : Int, base : Ref :: i != j ==> array_offset(base, i) != array_offset(base, j)}
+}
+
+// PART 1: Dynamic array predicate
+//
+// Define a predicate for a dynamic array. You may define new fields. You may
+// add arguments or heap-based functions for abstraction.
+predicate dyn_array(a: Ref) {
+    acc(a.curr_size) && acc(a.capacity) &&
+    (a.curr_size >= 0 && a.capacity > 0) && 
+    (a.curr_size <= a.capacity) &&
+    (forall i: Int :: (0 <= i < a.capacity) ==> acc(array_offset(a, i).data))
+}
+
+function size_array(a : Ref) : Int
+    requires dyn_array(a)
+    ensures unfolding dyn_array(a) in result == a.curr_size
+    ensures result >= 0
+{
+    unfolding dyn_array(a) in a.curr_size
+}
+
+function array_capacity(a: Ref) : Int
+    requires dyn_array(a)
+    ensures unfolding dyn_array(a) in result == a.capacity
+{
+    unfolding dyn_array(a) in a.capacity
+}
+
+function array_get(a : Ref, i : Int) : Int
+    requires dyn_array(a)
+    requires unfolding dyn_array(a) in 0 <= i < a.curr_size
+    ensures unfolding dyn_array(a) in result == array_offset(a, i).data
+{
+    unfolding dyn_array(a) in array_offset(a, i).data
+}
+
+// gives the content of the array from index i to index curr_size - 1 (included)
+
+function dyn_array_content(a : Ref) : Seq[Int]
+    requires dyn_array(a)
+
+    ensures |result| == size_array(a)
+    ensures unfolding dyn_array(a) in (forall idx : Int :: (0 <= idx < |result|) ==> result[idx] == array_offset(a, idx).data)
+    {
+        unfolding dyn_array(a) in array_content(a, 0, a.curr_size)
+    }
+
+
+
+function array_content(a : Ref, start: Int, end : Int) : Seq[Int]
+    requires end >= 0
+    requires 0 <= start <= end
+    requires forall idx : Int :: (start <= idx < end) ==> acc(array_offset(a, idx).data)
+    ensures |result| == end - start
+    ensures forall idx : Int :: (0 <= idx < |result|) ==> result[idx] == array_offset(a, start + idx).data
+    {
+        start == end ? Seq() : Seq(array_offset(a, start).data) ++ array_content(a, start + 1, end)
+    }
+
+
+function free_space(a : Ref) : Int 
+    requires dyn_array(a)
+    ensures result >= 0
+    {
+        unfolding dyn_array(a) in a.capacity - a.curr_size
+    }
+
+// PART 2: "Simple" append method
+//
+// Use the dyn_array predicate you defined to implement a method which appends
+// the given value at the end of the dynamic array, assuming the capacity is
+// sufficient as a precondition.
+method append_nogrow(arr: Ref, val: Int)
+    requires dyn_array(arr)
+    requires free_space(arr) > 0
+
+    ensures dyn_array(arr)
+    ensures size_array(arr) == old(size_array(arr)) + 1
+    ensures (array_capacity(arr)) == old(array_capacity(arr))
+    ensures old(dyn_array_content(arr)) ++ Seq(val) == dyn_array_content(arr)       // WANT TO PROVE THIS BUT CANT
+    {
+        var new_elem : Ref := array_offset(arr, size_array(arr))
+
+        unfold dyn_array(arr)
+        new_elem.data := val
+        arr.curr_size := arr.curr_size + 1
+        fold dyn_array(arr)
+    }
+
+// PART 3: Resize method
+//
+// Use the dyn_array predicate you defined to implement a method which
+// reallocates the given dynamic array, doubling its capacity and copying over
+// its original contents.
+
+define mem_alloc(arr, capacity){
+    inhale forall i : Int :: (0 <= i < capacity) ==> acc(array_offset(arr, i).data)
+}
+
+method mem_copy(source : Ref, target: Ref, start: Int, end: Int)
+    requires 0 <= start <= end
+    requires end >= 0
+    requires forall idx : Int :: (start <= idx < end) ==> acc(array_offset(source, idx).data)
+    requires forall idx : Int :: (start <= idx < end) ==> acc(array_offset(target, idx).data)
+
+    ensures forall idx : Int :: (start <= idx < end) ==> acc(array_offset(source, idx).data)
+    ensures forall idx : Int :: (start <= idx < end) ==> acc(array_offset(target, idx).data)
+    ensures array_content(source, start, end) == old(array_content(source, start, end))
+    ensures array_content(source, start, end) == array_content(target, start, end)
+
+    {
+        if(start < end){
+            array_offset(target, start).data :=  array_offset(source, start).data
+            mem_copy(source, target, start + 1, end)
+        }
+
+    }
+
+// very slow but verifies!!!
+method grow(arr: Ref)
+    returns (new_arr: Ref)
+    requires dyn_array(arr)
+    ensures dyn_array(new_arr)
+    ensures size_array(new_arr) == old(size_array(arr))
+    ensures array_capacity(new_arr) == 2 * old(array_capacity(arr))
+    ensures dyn_array_content(new_arr) == old(dyn_array_content(arr))
+    {
+        unfold dyn_array(arr)
+        new_arr := new(*)
+        new_arr.curr_size := arr.curr_size
+        new_arr.capacity := 2 * arr.capacity
+        
+        mem_alloc(new_arr, new_arr.capacity)
+        mem_copy(arr, new_arr, 0, arr.curr_size)
+
+        assert old(unfolding dyn_array(arr) in array_content(arr, 0, arr.curr_size)) == array_content(arr, 0, arr.curr_size)
+        assert old(unfolding dyn_array(arr) in array_content(arr, 0, arr.curr_size)) == array_content(new_arr, 0, new_arr.curr_size)
+        fold dyn_array(new_arr)
+
+        assert dyn_array_content(new_arr) == old(dyn_array_content(arr))
+    }
+
+
+// PART 4: "Full" append method
+//
+// Using the previous two methods, implement a method which will append a value
+// to the given dynamic array, resizing it first if necessary.
+method append(arr: Ref, val: Int)
+    returns (new_arr: Ref)
+    requires dyn_array(arr)
+
+    ensures dyn_array(new_arr)
+
+    ensures old(free_space(arr) == 0) ==> array_capacity(new_arr) == 2 * old(array_capacity(arr))
+    ensures old(free_space(arr) > 0) ==> array_capacity(new_arr) == old(array_capacity(arr))
+
+    ensures dyn_array_content(new_arr) == old(dyn_array_content(arr)) ++ Seq(val)
+
+    {
+        if(free_space(arr) == 0) {
+            new_arr := grow(arr)
+            assert unfolding dyn_array(new_arr) in true         // we have to let viper know about the capacity
+            append_nogrow(new_arr, val)
+        } else {
+            new_arr := arr
+            append_nogrow(new_arr, val)
+        }
+        
+    }
+

@@ -1,0 +1,327 @@
+field next: Ref // omit values for simplicity
+field elem: Int
+field head: Int
+field tail: Int
+field length: Int
+
+// Array API
+//
+// These methods are provided as an API for manipulating arrays. You should not
+// modify them.
+predicate array(self: Ref)
+function array_len(self: Ref): Int
+    requires array(self)
+function array_read(self: Ref, idx: Int): Int
+    requires array(self)
+    requires 0 <= idx && idx < array_len(self)
+method array_write(self: Ref, idx: Int, val: Int)
+    requires array(self)
+    requires 0 <= idx && idx < array_len(self)
+    ensures array(self)
+    ensures array_len(self) == old(array_len(self))
+    ensures forall i: Int :: {array_read(self, i)} 0 <= i && i < array_len(self) && i != idx ==>
+        array_read(self, i) == old(array_read(self, i))
+    ensures array_read(self, idx) == val
+
+
+function content_array(self: Ref, start: Int, end: Int) : Seq[Int]
+    requires array(self)
+    requires 0 <= start && start <= end && end <= array_len(self)
+    ensures |result| == end - start
+    ensures forall i: Int :: 0 <= i && i < |result| ==> result[i] == array_read(self, start + i)
+{
+    start == end ? Seq[Int]() : Seq(array_read(self, start)) ++ content_array(self, start + 1, end)
+}
+
+// PART 1: Circular buffer predicate
+//
+// Define a predicate for a circular buffer. You may define new fields. You may
+// add arguments or heap-based functions for abstraction.
+
+predicate cb(this : Ref) {
+    acc(this.head) && acc(this.tail) && acc(array(this)) && (
+    0 <= this.head < array_len(this) && 0 <= this.tail < array_len(this) && array_len(this) > 0)
+}
+
+function content(this: Ref): Seq[Int]
+    requires cb(this)
+    ensures |result| < cb_length(this) 
+    {   unfolding cb(this) in  
+            (this.head <= this.tail ? content_array(this, this.head, this.tail) :
+            content_array(this, this.head, array_len(this)) ++ content_array(this, 0, this.tail))
+    }
+
+function cb_length(this: Ref): Int
+    requires cb(this)
+    ensures result > 0
+    {
+        unfolding cb(this) in array_len(this)
+    }
+
+function is_full(this: Ref): Bool
+    requires cb(this)
+    {
+        //unfolding cb(this) in this.head - 1 == this.tail || (this.head == 0 && this.tail == array_len(this) - 1)
+        |content(this)| == cb_length(this) - 1
+    }
+
+function is_empty(this: Ref): Bool
+    requires cb(this)
+    {
+        //unfolding cb(this) in this.head == this.tail
+        |content(this)| == 0
+    }
+
+function reverse_seq(s: Seq[Int]): Seq[Int]
+    ensures |result| == |s|
+    {
+        s == Seq[Int]() ? Seq[Int]() : reverse_seq(s[1..]) ++ Seq(s[0])
+    }
+
+function free_space(this: Ref) : Int 
+    requires cb(this)
+    ensures result >= 0
+    {
+        cb_length(this) - |content(this)| - 1
+    }
+
+
+// PART 2.1: Read method
+//
+// Use the cb predicate you defined to implement a method which reads the first
+// value from the circular buffer, assuming there is one available as a pre-
+// condition.
+method cb_read(buf: Ref) returns (res: Int)
+    requires cb(buf)
+    requires !is_empty(buf)
+    ensures cb(buf)
+    ensures old(cb_length(buf)) == cb_length(buf)
+    ensures old(content(buf)) == Seq(res) ++ content(buf)
+    ensures |content(buf)| == old(|content(buf)|) - 1
+    ensures res in old(content(buf))
+    {
+        var l: Int := cb_length(buf);
+
+        unfold cb(buf);
+        res := array_read(buf, buf.head);
+
+        if (buf.head == l - 1) {
+            buf.head := 0;
+        } else {
+            buf.head := buf.head + 1;
+        }
+        fold cb(buf);
+    }
+
+// PART 2.2: Write method
+//
+// Use the cb predicate you defined to implement a method which writes a value
+// to the circular buffer, assuming there is room for it as a precondition.
+method cb_write(buf: Ref, val: Int)
+    requires cb(buf)
+    requires free_space(buf) > 0
+    ensures cb(buf)
+    ensures |content(buf)| <= cb_length(buf)
+    ensures |content(buf)| == old(|content(buf)|) + 1
+    ensures old(content(buf)) ++ Seq(val) == content(buf)
+    ensures free_space(buf) == old(free_space(buf)) - 1
+    {
+        var l: Int := cb_length(buf);
+        assert old(content(buf)) == content(buf)
+
+        unfold cb(buf);
+        array_write(buf, buf.tail, val);
+        fold cb(buf)
+
+
+        unfold cb(buf)
+        if(buf.tail == l - 1)
+        {
+            buf.tail := 0;
+        }
+        else
+        {
+            buf.tail := buf.tail + 1;
+        }
+        fold cb(buf);
+    }
+
+
+// PART 3: Linked list predicate
+//
+// Define a predicate for a linked list of integers. You may define new fields.
+// You may add arguments or heap-based functions for abstraction.
+predicate list(this: Ref) {
+    acc(this.elem) && acc(this.next) && 
+    (this.next != null ==> list(this.next))
+}
+
+function content_list(this: Ref): Seq[Int]
+    requires list(this)
+{
+    unfolding list(this) in 
+    this.next == null 
+        ? Seq[Int]() 
+        : Seq(this.elem) ++ content_list(this.next)
+}
+
+function list_length(this: Ref): Int 
+    requires list(this)
+    {
+        |content_list(this)|
+    }
+
+method create() returns (res: Ref)
+    ensures  list(res)
+    ensures unfolding list(res) in res.next == null
+    ensures list_length(res) == 0
+    ensures content_list(res) == Seq[Int]()
+{
+    res := new(*)
+    res.next := null
+    res.length := 0
+    fold list(res)
+}
+
+method prepend_list(this: Ref, e : Int) returns (res: Ref)
+    requires list(this)
+    ensures list(res)
+    ensures content_list(res) == Seq(e) ++ old(content_list(this))
+    ensures list_length(res) == old(list_length(this)) + 1
+    {
+        assert unfolding list(this) in true
+        res := new(*)
+        res.elem := e
+        res.next := this
+        fold list(res)
+
+    }
+
+method lemma_inverted_rev(w: Seq[Int], a : Int)
+    ensures reverse_seq(w ++ Seq(a)) == Seq(a) ++ reverse_seq(w)
+
+    {
+        if(|w| == 0){
+            assert reverse_seq(w ++ Seq(a)) == Seq(a) ++ reverse_seq(w)
+        }
+        else{
+
+            var ww : Seq[Int] := w[1..]
+            var sa : Seq[Int] := Seq(a)
+            var s0 : Seq[Int] := Seq(w[0])
+
+            assert ((s0 ++ ww))[0] == w[0]
+            assert ((s0 ++ ww))[1..] == ww
+            assert (s0 ++ ww) == w
+
+            assert ((s0 ++ ww) ++ sa)[0] == w[0]
+            assert ((s0 ++ ww) ++ sa)[1..] == ww ++ sa
+            assert (s0 ++ ww) ++ sa == s0 ++ (ww ++ sa)
+            assert reverse_seq(s0 ++ (ww ++ sa)) == reverse_seq(ww ++ sa) ++ s0
+            lemma_inverted_rev(ww, a)
+            assert reverse_seq(ww ++ sa) ++ s0 == sa ++ reverse_seq(ww) ++ s0
+            assert sa ++ reverse_seq(ww) ++ s0 == sa ++ reverse_seq(s0 ++ ww)
+            
+        }
+            
+            //assert reverse_seq(Seq(w[0]) ++ w[1..] ++ Seq(a)) == Seq(a) ++ reverse_seq(w[1..]) ++ Seq(w[0])
+    }
+
+method lemma_rev_rev(this: Seq[Int]) 
+    ensures this == reverse_seq(reverse_seq(this))
+
+    {
+        if(|this| == 0) {
+            assert this == Seq[Int]()
+            assert reverse_seq(this) == this
+        } else {
+            lemma_rev_rev(this[1..])
+            assert this[1..] == reverse_seq(reverse_seq(this[1..]))
+
+            lemma_inverted_rev(reverse_seq(this[1..]), this[0])
+            //assert this[|this| - 1] == reverse_seq(this)[0]
+            //assume this[1..] == reverse_seq(reverse_seq(this))[1..]
+            //assume Seq(this[0]) ++ this[1..] == Seq(reverse_seq(reverse_seq(this))[0]) ++ reverse_seq(reverse_seq(this))[1..]
+            assert this == reverse_seq(reverse_seq(this))
+        }
+    }
+    
+
+// PART 4: Circular buffer reverse using a linked list
+//
+// Using the predicates you defined and the read/write methods, implement a
+// method which will reverse the contents of a circular buffer, utilising a
+// linked list as temporary storage.
+method cb_reverse(buf: Ref)
+    requires cb(buf)
+    ensures cb(buf)
+    ensures old(cb_length(buf)) == cb_length(buf)
+    ensures content(buf) == reverse_seq(old(content(buf)))
+//
+    {
+        
+        var l: Int := |content(buf)|
+        var aux_list: Ref := create();
+        var i: Int := 0;
+
+            
+        while(i < l)
+            invariant cb(buf)
+            invariant l == |content(buf)| + i
+            invariant i < l ==> !is_empty(buf)
+            invariant old(free_space(buf)) == cb_length(buf) - l  - 1
+            invariant free_space(buf) == old(free_space(buf)) + i
+            invariant cb_length(buf) == old(cb_length(buf))
+            //invariant i <= l
+            invariant list(aux_list)
+            invariant list_length(aux_list) == i
+            invariant reverse_seq(content_list(aux_list)) ++ content(buf) == old(content(buf))
+        {
+            var c0 : Seq[Int] := content_list(aux_list)
+            var e: Int := cb_read(buf);
+            aux_list := prepend_list(aux_list, e);
+            assert content_list(aux_list) == Seq(e) ++ c0
+            assert reverse_seq(content_list(aux_list)) == reverse_seq(Seq(e) ++ c0)
+            assert (Seq(e) ++ c0)[0] == e
+            assert (Seq(e) ++ c0)[1..] == c0
+            assert reverse_seq(Seq(e) ++ c0)  == reverse_seq(c0) ++ Seq(e)
+            i := i + 1;
+        }
+
+        assert reverse_seq(content_list(aux_list)) == old(content(buf))
+        assert reverse_seq(reverse_seq(content_list(aux_list))) == reverse_seq(old(content(buf)))
+
+        assert is_empty(buf)
+        assert free_space(buf) == old(free_space(buf)) + l
+
+
+        assert l == |content_list(aux_list)|
+        var j: Int := 0;
+
+        var orig_seq : Seq[Int] := content_list(aux_list)
+
+        //assert free_space(buf) > 0
+        while(j < l) 
+        invariant cb(buf)
+        invariant j >= 0
+        invariant list(aux_list)
+        invariant list_length(aux_list) == l - j
+        invariant free_space(buf) == old(free_space(buf)) + l - j
+        invariant content(buf) ++ content_list(aux_list) == orig_seq
+        invariant reverse_seq(content(buf) ++ content_list(aux_list)) == old(content(buf))
+        {
+
+            var fs : Int := free_space(buf)
+            unfold list(aux_list)
+            var e: Int := aux_list.elem;
+            aux_list := aux_list.next;
+            cb_write(buf, e);
+            j := j + 1;
+            assert free_space(buf) == fs - 1
+        }
+        
+        lemma_rev_rev(content(buf))
+        assert reverse_seq(content(buf)) == old(content(buf))
+        assert content(buf) == reverse_seq(old(content(buf)))
+    
+    }
