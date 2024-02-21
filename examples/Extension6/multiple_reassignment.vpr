@@ -1,0 +1,8 @@
+method multipleplus(n : Int) returns (res : Int) 
+    ensures res == n + 2
+{
+    n := n + 1
+    res := n
+    n := n + 1
+    res := res + 1
+}

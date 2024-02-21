@@ -1,0 +1,16 @@
+method sum(n: Int) returns (res: Int)
+  requires 0 < n
+  ensures  res == n
+{
+  res := 0
+  var counter : Int := n
+
+  if(res < n && counter > 0){
+    
+  }else{
+    res := res + 1
+    counter := counter - 1
+  }
+
+  assert false
+}

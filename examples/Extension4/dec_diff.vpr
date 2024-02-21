@@ -1,0 +1,12 @@
+method decDifferent (n: Int ) returns (i: Int )
+requires 0 <= n
+ensures i == 0
+{
+    i := n
+    while ( i != 0)
+    decreases i
+    invariant 0 <= i
+    {
+        i := i - 1
+    }
+}

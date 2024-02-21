@@ -1,0 +1,8 @@
+method scope(n : Int, k: Bool) returns (res : Int) 
+    ensures n == 2 // it should fail
+{
+    k := false
+    k := true
+    n := 2
+    res := n
+}

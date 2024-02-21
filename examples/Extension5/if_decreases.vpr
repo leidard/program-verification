@@ -1,0 +1,13 @@
+method ifDecreases(n : Int) returns (res : Int) 
+    requires n >= 0
+    ensures res == n
+    decreases n + 10
+{
+    if (n == 0) {
+        res := n + 1
+    } else {
+        var m : Int := n - 1
+        res := ifDecreases(m)
+    }  
+    res := n
+}

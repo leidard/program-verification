@@ -1,0 +1,18 @@
+method foo(x: Int) returns (y: Int)
+    requires x > 0
+    ensures y < 10 
+{
+    //var i: Int := x // messo qua funzia :)
+    if (x == 5) {
+        y := 6
+        } else {
+            var i: Int := x // messo qua esplode :(
+            while(i <= x)
+            invariant i <= x + 1
+            {
+                y := y + 1
+                i := i + 1
+            }
+        
+    }
+}

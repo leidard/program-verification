@@ -1,0 +1,6 @@
+method plus(n : Int) returns (res : Int) 
+    ensures res == n + 1
+{
+    n := n + 1
+    res := n
+}

@@ -1,0 +1,12 @@
+method incBelow (n: Int ) returns (i: Int )
+requires 0 <= n
+ensures i == n
+{
+    i := 0
+    while ( i < n )
+    decreases n - i
+    invariant i <= n
+    {
+        i := i + 1
+    }
+}

@@ -1,0 +1,258 @@
+%{
+open AST
+open FSharp.Text.Parsing
+%}
+
+%token <string> NUM
+%token <string> IDENT
+%token ASSERT
+%token ENSURES 
+%token INVARIANT
+%token DECREASES
+%token MINUS COMMA DOUBLECOLON COLON COLONEQ NOT NEQ LPAR RPAR LCUR RCUR TIMES
+%token DIV AND PLUS LT LEQ EQ IMP GT GEQ OR ASSUME BOOL ELSE EXISTS FALSE
+%token FORALL FUNCTION IF INT METHOD REQUIRES RESULT RETURNS TRUE VAR WHILE
+%token EOF
+
+// Precedence is given by the order (from low to high)
+%left IMP
+%left AND
+%left OR
+%left EXISTS FORALL
+%left LEQ LT GEQ GT EQ NEQ
+%left PLUS MINUS
+%left TIMES DIV
+
+%start start
+
+%type <AST.document> start
+
+// Grammar productions
+%%
+
+start: document EOF             { $1 }
+
+document:
+  | document_item document { $1::$2 }
+  | document_item { [$1] }
+
+document_item:
+  | method { Method $1 }
+  | function { Function $1 }
+
+method:
+  | METHOD IDENT LPAR var_comma RPAR
+    method_returns specs
+    opt_body
+    { {
+        name = $2
+        inputs = $4
+        outputs = $6
+        specifications = $7
+        body = $8
+    } }
+method_returns:
+  | { [] }
+  | RETURNS LPAR var_comma RPAR { $3 }
+
+function:
+  | FUNCTION IDENT LPAR var_comma RPAR
+    COLON ty specs
+    opt_function_body
+    { {
+        name = $2
+        inputs = $4
+        ret = $7
+        specifications = $8
+        body = $9
+    } }
+opt_function_body: LCUR expr RCUR { Some $2 } | { None }
+
+opt_body: { None } | body { Some $1 }
+body:
+  | LCUR stmts RCUR { $2 }
+
+stmts: | { [] } | stmt stmts { $1::$2 }
+stmt:
+  | VAR var                          { Var($2, None) }
+  | VAR var COLONEQ expr             { Var($2, Some $4) }
+  | WHILE LPAR expr RPAR while_specs body   { While($3, $5, $6) }
+  | IF LPAR expr RPAR body           { If($3, $5, None) }
+  | IF LPAR expr RPAR body ELSE body { If($3, $5, Some $7) }
+  | ASSERT expr                      { Assert(
+      {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = Some(ErrorInfo.AssertionError(None))
+      }
+    
+    , $2) }
+  | ASSUME expr                      { Assume($2) }
+  | ident_comma COLONEQ expr         {
+    match $3 with
+    | Call(f, args) -> MethodAssignment($1, f, args, 
+        {
+          method_name = None;
+          no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+          error_type = Some(ErrorInfo.AssertionError(None))
+        }
+      )
+    | _ when List.length $1 > 1 -> failwith "non-method assigned to more than one variable"
+    | _ -> Assignment(List.head $1, $3)
+  }
+
+
+while_specs: { [] } | while_spec { [$1] } | while_spec while_specs { $1::$2 }
+while_spec:
+
+  | INVARIANT expr { Invariant(
+    {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }
+  , $2) }
+  
+  | DECREASES expr { Variant (
+    {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = Some(ErrorInfo.WhileVariantError(None))
+      }
+
+    , $2) }
+
+ident_comma:
+  | IDENT { [$1] }
+  | IDENT COMMA ident_comma { $1::$3 }
+
+var_comma:
+  | { [] }
+  | var { [$1] }
+  | var COMMA var_comma { $1::$3 }
+
+var: IDENT COLON ty { ($1, $3) }
+
+specs: { [] } | spec { [$1] } | spec specs { $1::$2 }
+spec: 
+  | REQUIRES expr { Requires $2 } 
+  | ENSURES expr { Ensures(
+    {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = Some(ErrorInfo.PostconditionError(None))
+      }
+    , $2) }
+  | DECREASES expr { Decreases (
+    {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = Some(ErrorInfo.MethodVariantGTZeroError(None))
+      }
+
+    , $2) }
+
+ty:
+  | INT   { Int }
+  | BOOL  { Bool }
+
+expr_comma:
+  | { [] }
+  | expr  { [$1] }
+  | expr COMMA expr_comma { $1::$3 }
+
+expr:
+  // Next precedence
+  | TRUE     { Boolean(true) }
+  | FALSE    { Boolean(false) }
+  | RESULT   { Result }
+  | NUM      { Integer($1) }
+  | IDENT    { Ref($1) }
+  | LPAR expr RPAR  { $2 }
+  | IDENT LPAR expr_comma RPAR    { Call($1, $3) }
+  // Next precedence
+  | MINUS expr     { Unary(UMinus, $2) }
+  | NOT expr       { Unary(Neg, $2) }
+  // Next precedence
+  | expr TIMES expr    { Binary(Times, $1, $3, {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+
+  | expr DIV expr      { Binary(Divide, $1, $3, {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+
+  // Next precedence
+  | expr PLUS expr     { Binary(Plus, $1, $3, 
+  {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+
+  | expr MINUS expr    { Binary(Minus, $1, $3, 
+  {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+
+  // Next precedence
+  | expr LEQ expr      { Binary(Leq, $1, $3, {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+  | expr LT expr       { Binary(Lt, $1, $3, {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+  | expr GEQ expr      { Binary(Geq, $1, $3, {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+  | expr GT expr       { Binary(Gt, $1, $3, {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+  | expr EQ expr       { Binary(Eq, $1, $3, {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+  | expr NEQ expr      { Binary(Neq, $1, $3, {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+  // Next precedence
+  | expr OR expr       { Binary(Or, $1, $3, {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+  // Next precedence
+  | expr AND expr      { Binary(And, $1, $3, {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+  // Next precedence
+  | expr IMP expr      { Binary(Implies, $1, $3, {
+        method_name = None;
+        no_line = parseState.InputStartPosition(1).pos_lnum + 1;
+        error_type = None
+      }) }
+  // Next precedence
+  | EXISTS var DOUBLECOLON expr     { Quantification(Exists, $2, $4) }
+  | FORALL var DOUBLECOLON expr     { Quantification(Forall, $2, $4) }
+
+
+%%

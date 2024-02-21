@@ -1,0 +1,16 @@
+method multidec(n : Int, m : Int) returns (res : Int) 
+    requires n >= 0
+    // requires m >= 0   //works with this
+    decreases n + m
+    ensures res >= 1
+{
+    //var v : Int := n;
+    //assert v >= 0;
+    if (n == 0) {
+        res := 1
+    } else {
+        //assert n-1 < v
+        res := multidec(n - 1, m)
+        res :=  n * res
+    }
+}

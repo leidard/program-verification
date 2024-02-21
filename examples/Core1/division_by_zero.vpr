@@ -1,0 +1,6 @@
+method division(n: Int) returns (res: Int)
+  requires 0 <= n
+  ensures  res > 0
+{
+  res := 10 / n
+}

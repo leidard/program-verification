@@ -1,0 +1,12 @@
+method decreaseReassigned(n : Int) returns (res : Int) 
+    requires n >= 0
+    decreases n 
+{
+    if (n == 0) {
+        res := 1
+    } else {
+        n := n - 1
+        res := decreaseReassigned(n)
+        res :=  n * res
+    }
+}

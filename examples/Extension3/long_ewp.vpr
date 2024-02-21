@@ -1,0 +1,19 @@
+//
+method main() {
+    var x : Int 
+    var y : Int 
+    var z : Int
+    var star : Bool 
+    assume x >= 0 && y >= 0
+    z := x - y
+    if ( star ) { 
+        assume z < 0
+        z := z + y 
+        z := z + 2 * x
+    } else {
+        assume !(z < 0 )
+        z := z - x
+        z := z + 4 * y
+    }
+    assert (z <= 3 * x) && (z <= 3 * y) && ( z == 3 * x || z == 3 * y )
+}

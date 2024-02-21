@@ -1,0 +1,11 @@
+method conditional(n : Int) returns (res : Int) 
+    requires n > 0
+    ensures res < 0
+{
+    if (n > 100){
+        n := n - n - 1
+    } else {
+        n := n - n - 1
+    }
+    res := n
+}

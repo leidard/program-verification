@@ -1,0 +1,14 @@
+method fac(n : Int) returns (res : Int) 
+    requires n >= 0
+    decreases n
+{
+    //var v : Int := n;
+    //assert v >= 0;
+    if (n == 0) {
+        res := 1
+    } else {
+        //assert n-1 < v
+        res := fac(n - 1)
+        res :=  n * res
+    }
+}

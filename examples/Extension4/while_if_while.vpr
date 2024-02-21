@@ -1,0 +1,33 @@
+method main(n: Int ) returns (i: Int, k: Int)
+requires 0 <= n
+ensures i == n
+{
+    i := 0
+    k := 0
+    while ( i < n ) 
+    decreases n - i
+    invariant (i <= n) && (k >= i)
+    {
+        k := i
+        i := i + 1
+        if (i >= 10){
+            while ( k < i )
+            decreases i - k
+            invariant k <= i
+            {
+                k := k + 1
+            }
+
+        } else {
+            k := i + 1
+            while ( k > i )
+            decreases k - i
+            invariant k >= i
+            {
+                k := k - 1
+            }
+
+        }
+        
+    }
+}

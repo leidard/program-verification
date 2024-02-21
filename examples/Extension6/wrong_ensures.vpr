@@ -1,0 +1,7 @@
+method wrong(n : Int) returns (res : Int) 
+    ensures res == n + 1
+{
+    n := n + 1
+    res := n
+    n := n + 1
+}

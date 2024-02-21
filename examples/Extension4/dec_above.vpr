@@ -1,0 +1,12 @@
+method decAbove (n: Int ) returns (i: Int )
+requires 0 <= n
+ensures i == 0
+{
+    i := n
+    while ( 0 < i )
+    decreases i
+    invariant 0 <= i
+    {
+        i := i - 1
+    }
+}

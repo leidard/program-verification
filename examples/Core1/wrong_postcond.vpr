@@ -1,0 +1,13 @@
+//
+method foo(x: Int) returns (y: Int)
+    requires x > 0
+    ensures y > x
+    ensures y <= 0
+{
+    if (x == 5) {
+        y := 6
+        } else {
+        y := x
+        y := y + 1
+    }
+}

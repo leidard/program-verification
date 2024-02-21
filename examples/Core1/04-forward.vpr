@@ -1,0 +1,15 @@
+method triple(x: Int) returns (r: Int)
+  requires x > 0
+{
+  assert x > 0
+
+  var y: Int
+
+  y := x + 7
+
+  y := x + 34
+
+  r := x + y
+
+  assert r > y
+}

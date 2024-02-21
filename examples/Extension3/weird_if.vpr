@@ -1,0 +1,29 @@
+//
+method main() {
+    var x : Int 
+    var y : Int 
+    var z : Int
+    assume x >= 0 && y >= 0
+    assume z == 10
+    
+    if ( x > y ) {
+        y := y + 1
+        if (x > y) {
+            y := y * y
+        } else {
+            
+            x := 0
+            y := y + 1
+            z:=10
+            z:=10
+            z:=10
+        }   
+        x := -y
+    } else {
+        if (x <= y) {
+            x := x - 1
+            y := y + 1
+        } else {z:=10}
+    }
+    assert x <= y && z == 10
+}
